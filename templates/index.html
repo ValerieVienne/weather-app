@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Weather Forecast</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<div class="container mt-4">
+    <h1 class="mb-4 text-center">Weather Dashboard</h1>
+
+    <form method="POST" class="mb-4">
+        <div class="row row-cols-1 row-cols-md-auto g-2 align-items-center justify-content-center">
+            <div class="col">
+                <input type="text" class="form-control" name="city" placeholder="Enter city name" required>
+            </div>
+            <div class="col">
+                <input type="email" class="form-control" name="email" placeholder="Your email (optional)">
+            </div>
+            <div class="col">
+                <select name="unit" class="form-select">
+                    <option value="metric" {% if unit == 'metric' %}selected{% endif %}>Celsius (°C)</option>
+                    <option value="imperial" {% if unit == 'imperial' %}selected{% endif %}>Fahrenheit (°F)</option>
+                </select>
+            </div>
+            <div class="col">
+                <button class="btn btn-primary">Get Forecast</button>
+            </div>
+        </div>
+    </form>
+        <!-- 🔔 ALERTS BLOCK -->
+    {% if custom_alerts %}
+    <div class="alert alert-danger">
+    <ul class="mb-0">
+        {% for alert in custom_alerts %}
+        <li>{{ alert }}</li>
+        {% endfor %}
+    </ul>
+    </div>
+    {% endif %}
+
+    
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% if city %}
+        <h2 class="text-center mb-4">{{ city }}</h2>
+    {% endif %}
+
+    {% if current %}
+    <div class="card mb-4">
+        <div class="card-body text-center">
+            <h5>Current Weather</h5>
+            <img src="http://openweathermap.org/img/wn/{{ current.icon }}@2x.png" alt="{{ current.description }}">
+            <p class="mb-0">{{ current.description | capitalize }}</p>
+            <p class="mb-0">Temp: {{ current.temp }}{{ unit_symbol }}  (Feels like: {{ current.feels_like }}{{ unit_symbol }})</p>
+            <p class="mb-0">Humidity: {{ current.humidity }}%</p>
+            <p class="mb-0">Wind: {{ current.wind }} m/s</p>
+            <p class="mb-0">Rain: {{ current.rain }} mm</p>
+            <p>Chance: {{ current['pop'] }}%</p>
+            <p>Sunrise: {{ current.sunrise }} | Sunset: {{ current.sunset }}</p>
+        </div>
+    </div>
+
+    
+    <!-- Hourly Forecast Section (Next 12 hours approx) -->
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="text-center mb-3">Upcoming Weather</h5>
+        <div class="row text-center">
+            {% for h in hourly %}
+            <div class="col">
+                <p class="mb-0"><strong>{{ h.time }}</strong></p>
+                <img src="http://openweathermap.org/img/wn/{{ h.icon }}.png" alt="icon">
+                <p class="mb-0">{{ h.temp }}{{ unit_symbol }}</p>
+                <p class="small text-muted mb-0">Wind: {{ h.wind }} m/s</p>
+                <p class="small text-muted mb-0">Rain: {{ h.rain }} mm</p>
+                <p class="small text-muted">Chance: {{ h['pop'] }}%</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+    {% endif %}
+
+    {% if forecast %}
+    <div class="row">
+        {% for day in forecast %}
+        <div class="col-md-4 mb-4">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">{{ day.date }}</h5>
+                    <img src="http://openweathermap.org/img/wn/{{ day.icon }}@2x.png" alt="{{ day.description }}">
+                    <p class="card-text">{{ day.description | capitalize }}</p>
+                    <p class="mb-0">Avg Temp: {{ day.temp_avg }}{{ unit_symbol }}</p>
+                    <p class="mb-0">Min: {{ day.temp_min }}{{ unit_symbol }} | Max: {{ day.temp_max }}{{ unit_symbol }}</p>
+                    <p class="mb-0">Humidity: {{ day.humidity }}%</p>
+                    <p>Wind: {{ day.wind_min }} - {{ day.wind_max }} | Avg {{ day.wind_avg }} m/s</p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="row">
+        <!-- Temperature Chart -->
+        <div class="col-md-6 mb-4">
+            <h5 class="text-center">Temperature Trend</h5>
+            <div style="position: relative; height: 350px;">
+                <canvas id="tempChart"></canvas>
+            </div>
+            <div class="d-flex justify-content-center mt-2 gap-2">
+                <label><input type="checkbox" id="toggleAvgTemp" checked> Avg</label>
+                <label><input type="checkbox" id="toggleMinTemp" checked> Min</label>
+                <label><input type="checkbox" id="toggleMaxTemp" checked> Max</label>
+            </div>
+        </div>
+    
+        <!-- Wind Chart -->
+        <div class="col-md-6 mb-4">
+            <h5 class="text-center">Wind Speed Trend</h5>
+            <div style="position: relative; height: 350px;">
+                <canvas id="windChart"></canvas>
+            </div>
+            <div class="d-flex justify-content-center mt-2 gap-2">
+                <label><input type="checkbox" id="toggleMinWind" checked> Min</label>
+                <label><input type="checkbox" id="toggleMaxWind" checked> Max</label>
+                <label><input type="checkbox" id="toggleAvgWind" checked> Avg</label>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const forecastLabels = {{ forecast | map(attribute='date') | list | tojson }};
+        const tempAvg = {{ forecast | map(attribute='temp_avg') | list | tojson }};
+        const tempMin = {{ forecast | map(attribute='temp_min') | list | tojson }};
+        const tempMax = {{ forecast | map(attribute='temp_max') | list | tojson }};
+        const windMin = {{ forecast | map(attribute='wind_min') | list | tojson }};
+        const windMax = {{ forecast | map(attribute='wind_max') | list | tojson }};
+    
+        // Temperature Chart
+        const tempCtx = document.getElementById('tempChart').getContext('2d');
+        const tempChart = new Chart(tempCtx, {
+            type: 'line',
+            data: {
+                labels: forecastLabels,
+                datasets: [
+                    {
+                        label: 'Avg Temp ({{ unit_symbol }})',
+                        data: tempAvg,
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        fill: false,
+                        hidden: false
+                    },
+                    {
+                        label: 'Min Temp ({{ unit_symbol }})',
+                        data: tempMin,
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        fill: false,
+                        hidden: false
+                    },
+                    {
+                        label: 'Max Temp ({{ unit_symbol }})',
+                        data: tempMax,
+                        borderColor: 'rgba(255, 206, 86, 1)',
+                        fill: false,
+                        hidden: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        title: { display: true, text: 'Temperature ({{ unit_symbol }})' }
+                    }
+                }
+            }
+        });
+    
+        // Wind Chart
+        const windCtx = document.getElementById('windChart').getContext('2d');
+        const windChart = new Chart(windCtx, {
+            type: 'line',
+            data: {
+                labels: forecastLabels,
+                datasets: [
+                    {
+                        label: 'Min Wind (m/s)',
+                        data: windMin,
+                        borderColor: 'rgba(153, 102, 255, 1)',
+                        fill: false,
+                        hidden: false
+                    },
+                    {
+                        label: 'Max Wind (m/s)',
+                        data: windMax,
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        fill: false,
+                        hidden: false
+                    },
+                    {
+                        label: 'Avg Wind (m/s)',
+                        data: {{ forecast | map(attribute='wind_avg') | list }},
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 2,
+                        fill: false
+                    }
+
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        suggestedMax: Math.max(...windMax) + 2,
+                        title: { display: true, text: 'Wind Speed (m/s)' }
+                    }
+                }
+            }
+        });
+    
+        // Toggle logic for Temperature
+        document.getElementById('toggleAvgTemp').addEventListener('change', e => {
+            tempChart.data.datasets[0].hidden = !e.target.checked;
+            tempChart.update();
+        });
+        document.getElementById('toggleMinTemp').addEventListener('change', e => {
+            tempChart.data.datasets[1].hidden = !e.target.checked;
+            tempChart.update();
+        });
+        document.getElementById('toggleMaxTemp').addEventListener('change', e => {
+            tempChart.data.datasets[2].hidden = !e.target.checked;
+            tempChart.update();
+        });
+    
+        // Toggle logic for Wind
+        document.getElementById('toggleMinWind').addEventListener('change', e => {
+            windChart.data.datasets[0].hidden = !e.target.checked;
+            windChart.update();
+        });
+        document.getElementById('toggleMaxWind').addEventListener('change', e => {
+            windChart.data.datasets[1].hidden = !e.target.checked;
+            windChart.update();
+        });
+        document.getElementById('toggleAvgWind').addEventListener('change', e => {
+            windChart.data.datasets[2].hidden = !e.target.checked;  // 👈 it's dataset #2
+            windChart.update();
+        });
+
+    </script>
+    
+    {% endif %}
+</div>
+</body>
+</html>
